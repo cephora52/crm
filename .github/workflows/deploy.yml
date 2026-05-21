@@ -5,14 +5,25 @@ on:
     branches:
       - main
 
-
 jobs:
 
-  terraform:
+  checkout:
 
-    name: Terraform Infrastructure
+    name: Checkout Source Code
 
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Clone Repository
+        uses: actions/checkout@v4
+
+  terraform-init:
+
+    name: Terraform Init
+
+    runs-on: ubuntu-latest
+
+    needs: checkout
 
     defaults:
       run:
@@ -36,22 +47,82 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      - name: Terraform Format Check
+  terraform-format:
+
+    name: Terraform Format Check
+
+    runs-on: ubuntu-latest
+
+    needs: terraform-init
+
+    defaults:
+      run:
+        working-directory: crm-terraform
+
+    steps:
+
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format
         run: terraform fmt -check
+
+  terraform-validate:
+
+    name: Terraform Validate
+
+    runs-on: ubuntu-latest
+
+    needs: terraform-format
+
+    defaults:
+      run:
+        working-directory: crm-terraform
+
+    steps:
+
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Validate
         run: terraform validate
 
-      - name: Terraform Plan
-        run: terraform plan
+  terraform-plan:
 
-  build-and-deploy:
-
-    name: Build And Deploy Spring Boot
+    name: Terraform Plan
 
     runs-on: ubuntu-latest
 
-    needs: terraform
+    needs: terraform-validate
+
+    defaults:
+      run:
+        working-directory: crm-terraform
+
+    steps:
+
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Plan
+        run: terraform plan
+
+  build:
+
+    name: Build Spring Boot Application
+
+    runs-on: ubuntu-latest
+
+    needs: terraform-plan
 
     steps:
 
@@ -69,13 +140,24 @@ jobs:
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-m2
 
-      - name: Build Spring Boot Application
+      - name: Build Application
         run: mvn clean package -DskipTests
 
-      - name: Upload JAR to EC2
+  deploy:
+
+    name: Deploy Application To EC2
+
+    runs-on: ubuntu-latest
+
+    needs: build
+
+    steps:
+
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      - name: Upload JAR To EC2
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
@@ -84,7 +166,7 @@ jobs:
           source: "target/*.jar"
           target: "/home/ubuntu"
 
-      - name: Deploy Application On EC2
+      - name: Restart Spring Boot Application
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.AWS_EC2_HOST }}
