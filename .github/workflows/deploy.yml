@@ -167,6 +167,9 @@ jobs:
       - name: Build Application
         run: mvn clean package -DskipTests
 
+      - name: List Target Files
+        run: ls -R target
+
   deploy:
 
     name: Deploy Application To EC2
